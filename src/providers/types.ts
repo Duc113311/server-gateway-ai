@@ -19,10 +19,24 @@ export interface ChatReply {
   outputTokens: number;
 }
 
+/**
+ * One item from a streaming completion: either a token [delta] as it arrives,
+ * or a final [done] frame carrying the model and token usage.
+ */
+export interface ChatStreamChunk {
+  delta?: string;
+  done?: boolean;
+  model?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
 export interface ChatProvider {
   readonly name: string;
   readonly model: string;
   chat(req: ChatRequest): Promise<ChatReply>;
+  /** Token-by-token variant. Optional — providers without it fall back to [chat]. */
+  chatStream?(req: ChatRequest): AsyncGenerator<ChatStreamChunk, void, void>;
 }
 
 /**
