@@ -14,14 +14,18 @@ export const openaiProvider: ChatProvider = {
   model: config.openaiModel,
 
   async chat(req: ChatRequest): Promise<ChatReply> {
+    // Reasoning models (o1/o3/o4, gpt-5*) only accept the default temperature
+    // (1) and reject an explicit value, unlike gpt-4o-class models.
+    const isReasoningModel = /^(o[134]|gpt-5)/.test(config.openaiModel);
+
     const body = {
       model: config.openaiModel,
       messages: [
         { role: 'system', content: req.system },
         ...req.turns.map((t) => ({ role: t.role, content: t.content })),
       ],
-      max_tokens: req.maxOutputTokens,
-      temperature: 0.6,
+      max_completion_tokens: req.maxOutputTokens,
+      ...(isReasoningModel ? {} : { temperature: 0.6 }),
     };
 
     let response: Response;
