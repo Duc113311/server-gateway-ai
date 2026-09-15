@@ -40,7 +40,7 @@ export const config = {
   maxHistoryTurns: num('MAX_HISTORY_TURNS', 12),
   maxOutputTokens: num('MAX_OUTPUT_TOKENS', 500),
   requestsPerMinute: num('RATE_PER_MINUTE', 8),
-  requestsPerDay: num('RATE_PER_DAY', 60),
+  requestsPerDay: num('RATE_PER_DAY', 5),
   upstreamTimeoutMs: num('UPSTREAM_TIMEOUT_MS', 30_000),
 
   logLevel: (process.env.LOG_LEVEL || 'info').toLowerCase(),
