@@ -1,5 +1,34 @@
 import { config } from './config';
 
+/**
+ * Quotas are per feature, not per user: one image can cost what fifty chat
+ * turns do, so they cannot share an allowance.
+ */
+export type Feature = 'chat' | 'image' | 'video' | 'translate';
+
+interface Limits {
+  perMinute: number;
+  perDay: number;
+}
+
+function limitsFor(feature: Feature): Limits {
+  switch (feature) {
+    case 'image':
+      return { perMinute: config.imageRatePerMinute, perDay: config.imageRatePerDay };
+    case 'video':
+      // A render takes minutes anyway, so one in flight per minute is already
+      // more than a user can watch; the daily cap is the real guard.
+      return { perMinute: 1, perDay: config.videoRatePerDay };
+    case 'translate':
+      return {
+        perMinute: config.translateRatePerMinute,
+        perDay: config.translateRatePerDay,
+      };
+    default:
+      return { perMinute: config.requestsPerMinute, perDay: config.requestsPerDay };
+  }
+}
+
 interface Bucket {
   /** Timestamps of calls inside the rolling minute. */
   minute: number[];
@@ -24,25 +53,32 @@ export interface RateVerdict {
 }
 
 /**
- * Per-user quota: a rolling one-minute window plus a hard daily cap.
+ * Per-user, per-feature quota: a rolling one-minute window plus a hard daily
+ * cap.
  *
  * Held in memory, so the limits are per instance — run more than one replica
  * and each gets its own allowance. Move this to Firestore or Redis before
  * scaling out.
  */
-export function checkRate(uid: string, now = Date.now()): RateVerdict {
+export function checkRate(
+  uid: string,
+  feature: Feature = 'chat',
+  now = Date.now(),
+): RateVerdict {
+  const limits = limitsFor(feature);
   const today = dayKey(now);
-  let bucket = buckets.get(uid);
+  const key = `${feature}:${uid}`;
+  let bucket = buckets.get(key);
 
   if (!bucket || bucket.dayKey !== today) {
     bucket = { minute: [], day: 0, dayKey: today };
-    buckets.set(uid, bucket);
+    buckets.set(key, bucket);
   }
 
   const windowStart = now - 60_000;
   bucket.minute = bucket.minute.filter((t) => t > windowStart);
 
-  if (bucket.minute.length >= config.requestsPerMinute) {
+  if (bucket.minute.length >= limits.perMinute) {
     const oldest = bucket.minute[0];
     return {
       allowed: false,
@@ -51,7 +87,7 @@ export function checkRate(uid: string, now = Date.now()): RateVerdict {
     };
   }
 
-  if (bucket.day >= config.requestsPerDay) {
+  if (bucket.day >= limits.perDay) {
     const midnight = Date.parse(`${today}T23:59:59.999Z`) + 1;
     return {
       allowed: false,
@@ -71,7 +107,7 @@ export function checkRate(uid: string, now = Date.now()): RateVerdict {
  */
 export function pruneRateBuckets(now = Date.now()): void {
   const today = dayKey(now);
-  for (const [uid, bucket] of buckets) {
-    if (bucket.dayKey !== today) buckets.delete(uid);
+  for (const [key, bucket] of buckets) {
+    if (bucket.dayKey !== today) buckets.delete(key);
   }
 }
