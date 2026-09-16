@@ -12,7 +12,8 @@ import {
   ValidationError,
 } from '../prompt';
 import { provider, ProviderError } from '../providers';
-import { checkRate } from '../rateLimit';
+import { record } from '../store/requestLog';
+import { allow } from './respond';
 
 export const chatRouter = Router();
 
@@ -26,14 +27,9 @@ export const chatRouter = Router();
 chatRouter.post('/chat', requireAuth, async (req, res) => {
   const uid = req.uid!;
 
-  const verdict = checkRate(uid);
-  if (!verdict.allowed) {
-    res
-      .status(429)
-      .set('retry-after', String(verdict.retryAfter ?? 60))
-      .json({ error: 'rate_limited', scope: verdict.scope, retryAfter: verdict.retryAfter });
-    return;
-  }
+  // Checked before the body is parsed, so a flood of malformed requests is
+  // still capped. The refusal is recorded without a prompt for that reason.
+  if (!allow(res, uid, 'chat')) return;
 
   let turns;
   let locale;
@@ -120,6 +116,20 @@ chatRouter.post('/chat', requireAuth, async (req, res) => {
         `chat uid=${uid} provider=${provider.name} model=${model} ` +
           `in=${inputTokens} out=${outputTokens} ${Date.now() - startedAt}ms stream`,
       );
+      record({
+        uid,
+        feature: 'chat',
+        provider: provider.name,
+        model,
+        inputTokens,
+        outputTokens,
+        latencyMs: Date.now() - startedAt,
+        status: 'ok',
+        stream: true,
+        locale,
+        prompt: turns[turns.length - 1].content,
+        replyPreview: finalCard ? cardToText(finalCard) : buffer,
+      });
       return;
     }
 
@@ -137,6 +147,20 @@ chatRouter.post('/chat', requireAuth, async (req, res) => {
     // The model answers as a JSON card; parse it here so the app gets a clean
     // shape and a plain-text fallback, never a raw JSON blob to show on failure.
     const card = parseCard(reply.text);
+    record({
+      uid,
+      feature: 'chat',
+      provider: provider.name,
+      model: reply.model,
+      inputTokens: reply.inputTokens,
+      outputTokens: reply.outputTokens,
+      latencyMs: Date.now() - startedAt,
+      status: 'ok',
+      stream: false,
+      locale,
+      prompt: turns[turns.length - 1].content,
+      replyPreview: card ? cardToText(card) : reply.text,
+    });
     res.json({
       card,
       reply: card ? cardToText(card) : reply.text,
@@ -148,6 +172,20 @@ chatRouter.post('/chat', requireAuth, async (req, res) => {
       // The upstream's own message can name the model or the key, so it stays
       // in the log and the client only learns whether retrying is worthwhile.
       log.warn(`chat uid=${uid} failed: ${e.message}`);
+      record({
+        uid,
+        feature: 'chat',
+        provider: provider.name,
+        model: provider.model,
+        inputTokens: 0,
+        outputTokens: 0,
+        latencyMs: Date.now() - startedAt,
+        status: 'error',
+        errorCode: `upstream_${e.status}`,
+        stream: wantStream,
+        locale,
+        prompt: turns[turns.length - 1].content,
+      });
       // Once the SSE stream is open, the status line is already sent — the
       // client reads a failure as an in-band error frame, not an HTTP status.
       if (res.headersSent) {

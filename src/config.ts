@@ -35,6 +35,12 @@ function lower<T extends string>(name: string, fallback: T): T {
   return str(name, fallback).toLowerCase() as T;
 }
 
+function bool(name: string, fallback: boolean): boolean {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  return /^(1|true|yes|on)$/i.test(raw.trim());
+}
+
 export const config = {
   port: num('PORT', 8080),
 
@@ -136,6 +142,39 @@ export const config = {
   maxTranslateItems: num('MAX_TRANSLATE_ITEMS', 50),
   translateRatePerMinute: num('TRANSLATE_RATE_PER_MINUTE', 20),
   translateRatePerDay: num('TRANSLATE_RATE_PER_DAY', 200),
+
+  // ── Admin dashboard ───────────────────────────────────────────────────────
+  /** Off by default: an admin surface is only worth exposing when it is wanted. */
+  adminEnabled: bool('ADMIN_ENABLED', false),
+  /** Shown in the authenticator app next to the code. */
+  adminIssuer: str('ADMIN_ISSUER', 'AquaMind Gateway'),
+  adminAccountPath: str('ADMIN_ACCOUNT_PATH', './data/admin.json'),
+  /**
+   * Bearer for the one-time enrolment. Without it `/admin/setup` is closed,
+   * so a public gateway cannot have an admin account claimed by whoever finds
+   * the URL first.
+   */
+  adminSetupToken: str('ADMIN_SETUP_TOKEN', ''),
+
+  /** Request history. */
+  adminLogPath: str('ADMIN_LOG_PATH', './data/requests.jsonl'),
+  /**
+   * Whether the user's message and the reply opening are stored. This is the
+   * privacy switch: with it off the dashboard still shows who, when, which
+   * model and what it cost, but not what was said.
+   */
+  adminLogPrompts: bool('ADMIN_LOG_PROMPTS', true),
+  adminLogPromptChars: num('ADMIN_LOG_PROMPT_CHARS', 2000),
+  adminLogMaxEntries: num('ADMIN_LOG_MAX_ENTRIES', 50_000),
+  adminLogRetentionDays: num('ADMIN_LOG_RETENTION_DAYS', 30),
+
+  /** Sessions and the brute-force guard. */
+  adminSessionTtlMs: num('ADMIN_SESSION_TTL_MS', 8 * 60 * 60 * 1000),
+  /** How long the half-authenticated state between password and 2FA survives. */
+  adminPendingTtlMs: num('ADMIN_PENDING_TTL_MS', 5 * 60 * 1000),
+  adminMaxLoginAttempts: num('ADMIN_MAX_LOGIN_ATTEMPTS', 5),
+  adminLockoutMs: num('ADMIN_LOCKOUT_MS', 15 * 60 * 1000),
+  adminLockoutWindowMs: num('ADMIN_LOCKOUT_WINDOW_MS', 15 * 60 * 1000),
 
   logLevel: lower('LOG_LEVEL', 'info'),
 };

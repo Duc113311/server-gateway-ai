@@ -1,6 +1,10 @@
 import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
+import { adminRouter } from './admin/routes';
+import { pruneSessions } from './admin/session';
+import { needsSetup } from './admin/account';
 import { assertConfig, config } from './config';
+import { pruneRequestLog } from './store/requestLog';
 import { log } from './log';
 import { imageProvider, provider, translateProvider, videoProvider } from './providers';
 import { pruneRateBuckets } from './rateLimit';
@@ -29,6 +33,12 @@ app.use('/v1', imageRouter);
 app.use('/v1', videoRouter);
 app.use('/v1', translateRouter);
 
+// The dashboard posts JSON forms; urlencoded is not used anywhere, so only the
+// JSON parser above is needed. Mounted last so no admin path can shadow /v1.
+if (config.adminEnabled) {
+  app.use('/admin', adminRouter);
+}
+
 app.use((_req, res) => {
   res.status(404).json({ error: 'not_found' });
 });
@@ -51,6 +61,20 @@ const server = app.listen(config.port, () => {
       `video=${videoProvider ? `${videoProvider.name}/${videoProvider.model}` : 'off'} ` +
       `translate=${translateProvider ? translateProvider.name : 'off'}`,
   );
+  if (config.adminEnabled) {
+    log.info(
+      `admin dashboard on /admin ` +
+        `(prompts=${config.adminLogPrompts ? 'logged' : 'not logged'}, ` +
+        `retention=${config.adminLogRetentionDays}d)`,
+    );
+    if (needsSetup()) {
+      log.warn(
+        config.adminSetupToken
+          ? 'admin not enrolled yet — open /admin/setup?token=… to create the account'
+          : 'admin not enrolled and ADMIN_SETUP_TOKEN is empty — enrolment is closed',
+      );
+    }
+  }
   if (config.authMode === 'none') {
     log.warn('AUTH_MODE=none — anyone who reaches this port can spend your tokens');
   }
@@ -61,6 +85,8 @@ const server = app.listen(config.port, () => {
 const pruneTimer = setInterval(() => {
   pruneRateBuckets();
   pruneVideoJobs();
+  pruneSessions();
+  pruneRequestLog();
 }, 60 * 60 * 1000);
 pruneTimer.unref();
 

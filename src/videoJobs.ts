@@ -7,7 +7,11 @@ export interface VideoJob {
   /** Owner. A job is only readable by the uid that started it. */
   uid: string;
   handle: VideoHandle;
+  /** What was asked for, kept so the dashboard can show it when it finishes. */
+  prompt: string;
   status: VideoStatus;
+  /** Set once the finished render has been recorded, so it is logged one time. */
+  logged?: boolean;
   /** Upstream location of the finished clip. Never sent to the client: on both
    * providers it is only fetchable with the API key. */
   upstreamUrl?: string;
@@ -18,12 +22,13 @@ export interface VideoJob {
 
 const jobs = new Map<string, VideoJob>();
 
-export function createJob(uid: string, handle: VideoHandle): VideoJob {
+export function createJob(uid: string, handle: VideoHandle, prompt: string): VideoJob {
   const now = Date.now();
   const job: VideoJob = {
     id: randomUUID(),
     uid,
     handle,
+    prompt,
     status: 'pending',
     createdAt: now,
     updatedAt: now,

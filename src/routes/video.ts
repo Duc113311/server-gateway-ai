@@ -4,6 +4,7 @@ import { requireAuth } from '../auth';
 import { config } from '../config';
 import { log } from '../log';
 import { videoProvider } from '../providers';
+import { record } from '../store/requestLog';
 import { createJob, getJob, updateJob } from '../videoJobs';
 import { allow, readString, sendProviderError } from './respond';
 
@@ -50,7 +51,7 @@ videoRouter.post('/video', requireAuth, async (req, res) => {
       size: readString(req.body?.size) ?? undefined,
       seconds: Number.isFinite(seconds) ? Math.floor(seconds) : undefined,
     });
-    const job = createJob(uid, handle);
+    const job = createJob(uid, handle, prompt);
 
     log.info(
       `video uid=${uid} provider=${videoProvider.name} model=${handle.model} ` +
@@ -103,6 +104,25 @@ videoRouter.get('/video/:id', requireAuth, async (req, res) => {
       upstreamUrl: progress.url,
       error: progress.error,
     });
+
+    // A finished render is recorded once, here, where the elapsed time is the
+    // render itself rather than the few milliseconds the queue call took.
+    if (progress.status !== 'pending' && !job.logged) {
+      updateJob(job, { logged: true });
+      record({
+        uid,
+        feature: 'video',
+        provider: videoProvider.name,
+        model: job.handle.model,
+        inputTokens: 0,
+        outputTokens: 0,
+        latencyMs: Date.now() - job.createdAt,
+        status: progress.status === 'ready' ? 'ok' : 'error',
+        errorCode: progress.status === 'failed' ? 'render_failed' : undefined,
+        prompt: job.prompt,
+        replyPreview: progress.status === 'ready' ? 'rendered' : progress.error,
+      });
+    }
 
     if (progress.status === 'failed') {
       // The provider's wording can name the model or the moderation rule that

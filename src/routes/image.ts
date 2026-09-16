@@ -3,6 +3,7 @@ import { requireAuth } from '../auth';
 import { config } from '../config';
 import { log } from '../log';
 import { imageProvider } from '../providers';
+import { record } from '../store/requestLog';
 import { allow, readString, sendProviderError } from './respond';
 
 export const imageRouter = Router();
@@ -56,12 +57,39 @@ imageRouter.post('/image', requireAuth, async (req, res) => {
         `n=${reply.images.length} ${Date.now() - startedAt}ms`,
     );
 
+    record({
+      uid,
+      feature: 'image',
+      provider: imageProvider.name,
+      model: reply.model,
+      // Image models bill per picture, not per token, and none of them report
+      // usage — so these stay zero rather than being invented.
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: Date.now() - startedAt,
+      status: 'ok',
+      prompt,
+      replyPreview: `${reply.images.length} image(s) at ${size}`,
+    });
+
     res.json({
       images: reply.images,
       model: reply.model,
       provider: imageProvider.name,
     });
   } catch (e) {
+    record({
+      uid,
+      feature: 'image',
+      provider: imageProvider.name,
+      model: imageProvider.model,
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: Date.now() - startedAt,
+      status: 'error',
+      errorCode: 'upstream_failed',
+      prompt,
+    });
     sendProviderError(res, uid, 'image', e);
   }
 });

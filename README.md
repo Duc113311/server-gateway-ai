@@ -6,6 +6,10 @@ forwards the work to whichever upstream is configured.
 
 Same stack as `server_noti_drink`: Node 18+, TypeScript, `firebase-admin`.
 
+> **Hướng dẫn vận hành tiếng Việt:** [`docs/huong-dan-van-hanh.md`](docs/huong-dan-van-hanh.md)
+> — chạy local, deploy lên VPS (systemd + nginx + TLS), chọn model, và tiết
+> kiệm token. File README này là phần tham chiếu API.
+
 ## Why a gateway
 
 A provider key shipped inside an APK is extractable, and the bill is yours.
@@ -46,6 +50,63 @@ OpenAI, DeepSeek and xAI share one implementation
 things that differ — `max_tokens` vs `max_completion_tokens`, the reasoning
 budget, and whether JSON mode exists — are flags on the factory. Adding the
 next OpenAI-compatible vendor is one entry in `providers/index.ts`.
+
+## Admin dashboard
+
+`ADMIN_ENABLED=true` puts a dashboard on `/admin`: every served request with
+the uid that made it, the message, the model that answered, the tokens it
+cost, the latency, and a per-hour volume chart. Filters for time range,
+feature, model, status, user and a text search across messages; CSV export of
+whatever is filtered.
+
+Sign-in is two factors — a password, then a 6-digit code from Google
+Authenticator or any other TOTP app.
+
+### Enrolling
+
+Enrolment runs exactly once and is gated on a token, because a fresh
+deployment is reachable from the internet before anyone has claimed the admin
+account:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"
+# put that in ADMIN_SETUP_TOKEN, restart, then open:
+#   https://your-gateway/admin/setup?token=THAT_TOKEN
+```
+
+The page asks for a username and password, shows a QR to scan, verifies a live
+code, then prints ten recovery codes **once** — they are stored hashed and
+cannot be shown again. Enrolment signs you straight in, because both factors
+were just presented. Afterwards `/admin/setup` is closed for good and you can
+clear the token.
+
+Lost the phone: sign in with a recovery code (each works once). Lost those too:
+delete `ADMIN_ACCOUNT_PATH` and enrol again.
+
+### What is stored, and where
+
+Request history is append-only JSONL at `ADMIN_LOG_PATH`. `ADMIN_LOG_PROMPTS`
+is the privacy switch: with it off the dashboard still shows who, when, which
+model and what it cost, but the message text is never written to disk. History
+older than `ADMIN_LOG_RETENTION_DAYS` is dropped by the hourly sweep.
+
+Both files live under `data/`, which is gitignored. On Cloud Run that path is
+an ephemeral container filesystem — history does not survive a new revision.
+Mount a volume, or move the store to Firestore, if the history has to last.
+
+### Security properties
+
+- Password hashed with scrypt (`N=2^15`), compared in constant time.
+- TOTP codes are single-use: the accepted step is recorded, so a code seen over
+  someone's shoulder cannot be replayed inside its own 30-second window.
+- A correct password alone yields a *pending* session that every dashboard
+  route rejects; the session id is rotated when the code promotes it.
+- Cookie is `HttpOnly`, `SameSite=Strict`, and `Secure` off localhost.
+  State-changing calls also carry a per-session CSRF token.
+- Five failures from one IP triggers a 15-minute lockout.
+
+`npm run e2e:admin` exercises all of the above against a running instance —
+see the header of `scripts/e2e-admin.ts` for how to start one.
 
 ## Run it
 

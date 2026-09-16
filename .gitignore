@@ -3,3 +3,6 @@ dist/
 .env
 serviceAccount.json
 *.log
+
+# Admin account, request history and any other runtime state.
+data/

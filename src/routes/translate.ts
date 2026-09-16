@@ -4,6 +4,7 @@ import { config } from '../config';
 import { log } from '../log';
 import { parseLocale } from '../prompt';
 import { translateProvider } from '../providers';
+import { record } from '../store/requestLog';
 import { allow, readString, sendProviderError } from './respond';
 
 export const translateRouter = Router();
@@ -98,6 +99,20 @@ translateRouter.post('/translate', requireAuth, async (req, res) => {
         `${Date.now() - startedAt}ms`,
     );
 
+    record({
+      uid,
+      feature: 'translate',
+      provider: translateProvider.name,
+      model: reply.model,
+      inputTokens: reply.inputTokens ?? 0,
+      outputTokens: reply.outputTokens ?? 0,
+      latencyMs: Date.now() - startedAt,
+      status: 'ok',
+      locale: target,
+      prompt: texts.join(' | '),
+      replyPreview: reply.translations.join(' | '),
+    });
+
     res.json({
       // The singular field is present only when the caller asked in the
       // singular, so a batch can never be read as one string by accident.
@@ -111,6 +126,19 @@ translateRouter.post('/translate', requireAuth, async (req, res) => {
         : undefined,
     });
   } catch (e) {
+    record({
+      uid,
+      feature: 'translate',
+      provider: translateProvider.name,
+      model: translateProvider.model,
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: Date.now() - startedAt,
+      status: 'error',
+      errorCode: 'upstream_failed',
+      locale: target,
+      prompt: texts.join(' | '),
+    });
     sendProviderError(res, uid, 'translate', e);
   }
 });
