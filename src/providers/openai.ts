@@ -31,11 +31,6 @@ export const openaiProvider: ChatProvider = {
         ...req.turns.map((t) => ({ role: t.role, content: t.content })),
       ],
       max_completion_tokens: req.maxOutputTokens,
-      // The app renders a structured card, so the reply must be a JSON object.
-      response_format: { type: 'json_object' },
-      // Keep the reasoning budget small: the answer is a short card, and every
-      // reasoning token counts against max_completion_tokens and the bill.
-      reasoning_effort: 'low',
     };
 
     let response: Response;
@@ -89,13 +84,7 @@ export const openaiProvider: ChatProvider = {
         ...req.turns.map((t) => ({ role: t.role, content: t.content })),
       ],
       max_completion_tokens: req.maxOutputTokens,
-      // The streamed content is the JSON card, parsed incrementally by the
-      // route so the app can grow the card as tokens arrive.
-      response_format: { type: 'json_object' },
-      reasoning_effort: 'low',
       stream: true,
-      // Ask for the usage frame the non-stream call gets for free, so the quota
-      // log and the client's done event still carry real token counts.
       stream_options: { include_usage: true },
     };
 
