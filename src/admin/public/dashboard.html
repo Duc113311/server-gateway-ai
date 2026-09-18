@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Gateway admin</title>
+  <link rel="stylesheet" href="/admin/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>AI Gateway</h1>
+    <span class="who" id="who"></span>
+    <span class="spacer"></span>
+    <button class="ghost" id="btn-refresh" type="button">Refresh</button>
+    <button class="ghost" id="btn-export" type="button">Export CSV</button>
+    <button class="ghost" id="btn-logout" type="button">Sign out</button>
+  </header>
+
+  <main>
+    <!-- Filters in one row above the charts, so a change is visibly the cause
+         of what the charts then show. -->
+    <section class="filters">
+      <div>
+        <label for="f-range">Time range</label>
+        <select id="f-range">
+          <option value="1">Last hour</option>
+          <option value="24" selected>Last 24 hours</option>
+          <option value="168">Last 7 days</option>
+          <option value="720">Last 30 days</option>
+          <option value="0">All time</option>
+        </select>
+      </div>
+      <div>
+        <label for="f-feature">Feature</label>
+        <select id="f-feature"><option value="">All</option></select>
+      </div>
+      <div>
+        <label for="f-model">Model</label>
+        <select id="f-model"><option value="">All</option></select>
+      </div>
+      <div>
+        <label for="f-status">Status</label>
+        <select id="f-status">
+          <option value="">All</option>
+          <option value="ok">Success</option>
+          <option value="error">Error</option>
+        </select>
+      </div>
+      <div>
+        <label for="f-uid">User (uid)</label>
+        <input id="f-uid" type="search" placeholder="any">
+      </div>
+      <div>
+        <label for="f-search">Search in messages</label>
+        <input id="f-search" type="search" placeholder="any">
+      </div>
+    </section>
+
+    <section class="tiles" id="tiles"></section>
+
+    <section class="panel">
+      <h2>Requests per hour</h2>
+      <p class="cap" id="chart-cap">Local time. Hover a bar for the exact count.</p>
+      <svg class="chart" id="chart" role="img" aria-label="Requests per hour"></svg>
+    </section>
+
+    <div class="grid2">
+      <section class="panel">
+        <h2>By model</h2>
+        <p class="cap">Requests and tokens per upstream model.</p>
+        <ul class="rank" id="by-model"></ul>
+      </section>
+      <section class="panel">
+        <h2>By user</h2>
+        <p class="cap">Top callers in this range, by Firebase uid.</p>
+        <ul class="rank" id="by-user"></ul>
+      </section>
+    </div>
+
+    <section class="panel">
+      <h2>Requests</h2>
+      <p class="cap" id="table-cap">Click a row for the full message and reply.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>User</th>
+              <th>Feature</th>
+              <th>Model</th>
+              <th>Message</th>
+              <th class="num">In</th>
+              <th class="num">Out</th>
+              <th class="num">Latency</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="empty" hidden>No requests match these filters.</div>
+      <div class="pager">
+        <button class="ghost" id="prev" type="button">Previous</button>
+        <span id="page-info"></span>
+        <button class="ghost" id="next" type="button">Next</button>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="detail">
+    <h2 style="margin-top:0" id="d-title">Request</h2>
+    <p class="cap" id="d-meta"></p>
+    <h3 style="font-size:13px">Message</h3>
+    <pre id="d-prompt"></pre>
+    <h3 style="font-size:13px">Reply</h3>
+    <pre id="d-reply"></pre>
+    <button class="ghost" id="d-close" type="button" style="margin-top:14px">Close</button>
+  </dialog>
+
+  <div class="tooltip" id="tooltip" hidden></div>
+
+  <script src="/admin/app.js"></script>
+</body>
+</html>

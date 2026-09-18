@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Gateway admin — setup</title>
+  <link rel="stylesheet" href="/admin/app.css">
+</head>
+<body>
+  <div class="shell">
+    <div class="card">
+      <!-- Step 1: the account. -->
+      <div class="step active" id="step-account">
+        <h1>Create the admin account</h1>
+        <p class="sub">This runs once. After it, this page is closed for good.</p>
+
+        <form id="form-account">
+          <label for="username">Username</label>
+          <input id="username" type="text" autocomplete="username" required autofocus minlength="3">
+
+          <label for="password">Password</label>
+          <input id="password" type="password" autocomplete="new-password" required minlength="10">
+
+          <label for="password2">Repeat password</label>
+          <input id="password2" type="password" autocomplete="new-password" required minlength="10">
+
+          <button class="full" type="submit" id="btn-account">Continue</button>
+        </form>
+        <div class="error" id="err-account" hidden></div>
+        <div class="note">
+          At least 10 characters. This password and your phone are the only
+          things between the internet and every prompt your users have sent.
+        </div>
+      </div>
+
+      <!-- Step 2: enrol the authenticator. -->
+      <div class="step" id="step-qr">
+        <h1>Scan with your authenticator</h1>
+        <p class="sub">Google Authenticator, 1Password, Authy — any TOTP app.</p>
+
+        <img class="qr" id="qr" alt="QR code for enrolling this gateway in an authenticator app" width="240" height="240">
+
+        <p class="sub" style="margin:8px 0 6px">Can't scan? Enter this key by hand:</p>
+        <div class="secret" id="secret"></div>
+
+        <form id="form-confirm">
+          <label for="code">Code from the app</label>
+          <input id="code" class="code-input" type="text" inputmode="numeric"
+                 autocomplete="one-time-code" maxlength="6" pattern="[0-9]*" required>
+          <button class="full" type="submit" id="btn-confirm">Verify and finish</button>
+        </form>
+        <div class="error" id="err-confirm" hidden></div>
+      </div>
+
+      <!-- Step 3: recovery codes, shown exactly once. -->
+      <div class="step" id="step-done">
+        <h1>Save your recovery codes</h1>
+        <p class="sub">
+          Each works once, in place of the app. This is the only time they are
+          shown — they are stored hashed and cannot be recovered.
+        </p>
+
+        <div class="recovery" id="codes"></div>
+
+        <button class="ghost" id="btn-copy" type="button">Copy all</button>
+        <button class="full" id="btn-go" type="button">I've saved them — open the dashboard</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+// The token that opened this page is what authorises the enrolment calls too.
+const token = new URLSearchParams(location.search).get('token') || '';
+const state = { username: '', password: '', secret: '' };
+
+function fail(box, msg) { box.textContent = msg; box.hidden = false; }
+
+async function post(url, body) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...body, token }),
+  });
+  let data = {};
+  try { data = await res.json(); } catch {}
+  return { ok: res.ok, data };
+}
+
+function show(id) {
+  document.querySelectorAll('.step').forEach((s) => s.classList.remove('active'));
+  $(id).classList.add('active');
+}
+
+$('form-account').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('err-account').hidden = true;
+
+  if ($('password').value !== $('password2').value) {
+    fail($('err-account'), 'The two passwords do not match.');
+    return;
+  }
+
+  state.username = $('username').value.trim();
+  state.password = $('password').value;
+  $('btn-account').disabled = true;
+
+  const r = await post('/admin/setup/secret', { username: state.username });
+  $('btn-account').disabled = false;
+
+  if (!r.ok) { fail($('err-account'), r.data.message || r.data.error); return; }
+
+  state.secret = r.data.secret;
+  $('qr').src = r.data.qr;
+  // Grouped in fours so it can be typed into a phone without losing the place.
+  $('secret').textContent = r.data.secret.replace(/(.{4})/g, '$1 ').trim();
+  show('step-qr');
+  $('code').focus();
+});
+
+$('form-confirm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('err-confirm').hidden = true;
+  $('btn-confirm').disabled = true;
+
+  const r = await post('/admin/setup/confirm', {
+    username: state.username,
+    password: state.password,
+    secret: state.secret,
+    code: $('code').value,
+  });
+  $('btn-confirm').disabled = false;
+
+  if (!r.ok) {
+    fail($('err-confirm'), r.data.message || r.data.error);
+    $('code').value = '';
+    $('code').focus();
+    return;
+  }
+
+  $('codes').innerHTML = '';
+  for (const c of r.data.recoveryCodes) {
+    const el = document.createElement('span');
+    el.textContent = c;
+    $('codes').appendChild(el);
+  }
+  show('step-done');
+});
+
+$('btn-copy').addEventListener('click', async () => {
+  const text = [...$('codes').children].map((el) => el.textContent).join('\n');
+  try {
+    await navigator.clipboard.writeText(text);
+    $('btn-copy').textContent = 'Copied';
+  } catch {
+    // Clipboard is blocked outside a secure context; the codes are on screen
+    // anyway, so this only loses the convenience.
+    $('btn-copy').textContent = 'Copy blocked — select them by hand';
+  }
+});
+
+// Enrolment signs you in — both factors were just presented — so this goes
+// straight to the dashboard rather than to a login page that would reject the
+// code still on screen.
+$('btn-go').addEventListener('click', () => { location.href = '/admin'; });
+</script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+node_modules
+dist
+.env
+.env.*
+serviceAccount.json
+*.log
+.git
+README.md

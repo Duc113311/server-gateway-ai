@@ -98,6 +98,26 @@ function asText(v: unknown): string {
 }
 
 /**
+ * Removes a markdown code fence wrapping the reply.
+ *
+ * The system prompt asks for bare JSON and `response_format` is meant to
+ * enforce it, but not every upstream honours that — a proxy in front of a
+ * model that ignores JSON mode (Claude via 9Router, say) answers
+ * "```json\n{...}\n```", which `JSON.parse` rejects outright. Only a fence at
+ * the very start is stripped, so a stray ``` inside the content is left alone.
+ */
+export function stripFence(raw: string): string {
+  let s = raw.trim();
+  const opening = /^```[a-zA-Z]*[ \t]*\r?\n?/;
+  if (!opening.test(s)) return s;
+  s = s.replace(opening, '');
+  // The closing fence is absent while a stream is still arriving.
+  const closing = s.lastIndexOf('```');
+  if (closing >= 0) s = s.slice(0, closing);
+  return s.trim();
+}
+
+/**
  * Turns the model's raw JSON reply into a safe [Card], or null when it is not
  * usable (bad JSON, or no intro and no points). Clamps list sizes so a
  * misbehaving model can't grow the payload, and drops any icon we can't render.
@@ -105,7 +125,7 @@ function asText(v: unknown): string {
 export function parseCard(raw: string): Card | null {
   let obj: unknown;
   try {
-    obj = JSON.parse(raw);
+    obj = JSON.parse(stripFence(raw));
   } catch {
     return null;
   }
@@ -186,7 +206,9 @@ export function completeJson(raw: string): string {
 
 /** Best-effort [Card] from a partial stream buffer, or null if not yet usable. */
 export function parseCardPartial(raw: string): Card | null {
-  return parseCard(completeJson(raw));
+  // The fence comes off before the repair, or `completeJson` would try to
+  // balance brackets around the ``` markers and produce nonsense.
+  return parseCard(completeJson(stripFence(raw)));
 }
 
 /** A plain-text flattening of a card: the fallback body and the history turn. */

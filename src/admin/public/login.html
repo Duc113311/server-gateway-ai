@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Gateway admin — sign in</title>
+  <link rel="stylesheet" href="/admin/app.css">
+</head>
+<body>
+  <div class="shell">
+    <div class="card">
+      <!-- Step 1: password. A correct password only buys a pending session;
+           every dashboard route still rejects it until the code is entered. -->
+      <div class="step active" id="step-password">
+        <h1>Gateway admin</h1>
+        <p class="sub">Sign in to review requests, tokens and models.</p>
+
+        <form id="form-password" autocomplete="on">
+          <label for="username">Username</label>
+          <input id="username" name="username" type="text" autocomplete="username" required autofocus>
+
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+
+          <button class="full" type="submit" id="btn-password">Continue</button>
+        </form>
+        <div class="error" id="err-password" hidden></div>
+      </div>
+
+      <!-- Step 2: the authenticator code. -->
+      <div class="step" id="step-totp">
+        <h1>Two-factor code</h1>
+        <p class="sub" id="totp-sub">Enter the 6-digit code from your authenticator app.</p>
+
+        <form id="form-totp">
+          <label for="code" id="code-label">Authenticator code</label>
+          <input id="code" name="code" class="code-input" type="text"
+                 inputmode="numeric" autocomplete="one-time-code"
+                 maxlength="6" pattern="[0-9]*" required>
+
+          <button class="full" type="submit" id="btn-totp">Sign in</button>
+        </form>
+        <div class="error" id="err-totp" hidden></div>
+
+        <div class="note">
+          Lost the phone? <a href="#" id="use-recovery">Use a recovery code</a> —
+          each one works once.
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let recoveryMode = false;
+
+function fail(box, msg) {
+  box.textContent = msg;
+  box.hidden = false;
+}
+
+async function post(url, body) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  let data = {};
+  try { data = await res.json(); } catch {}
+  return { ok: res.ok, status: res.status, data };
+}
+
+// The server distinguishes these; the UI deliberately does not tell the visitor
+// which half was wrong.
+const MESSAGES = {
+  bad_credentials: 'That username and password did not match.',
+  locked_out: 'Too many attempts. Try again later.',
+  bad_code: 'That code is not valid right now. Wait for the next one.',
+  code_already_used: 'That code has already been used. Wait for the next one.',
+  bad_recovery_code: 'That recovery code is not valid.',
+  no_pending_login: 'The sign-in timed out. Start again.',
+};
+
+function explain(data) {
+  if (data.error === 'locked_out' && data.retryAfter) {
+    return `Too many attempts. Try again in ${Math.ceil(data.retryAfter / 60)} minute(s).`;
+  }
+  return MESSAGES[data.error] || data.message || 'Something went wrong.';
+}
+
+$('form-password').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('err-password').hidden = true;
+  $('btn-password').disabled = true;
+
+  const r = await post('/admin/login/password', {
+    username: $('username').value,
+    password: $('password').value,
+  });
+  $('btn-password').disabled = false;
+
+  if (!r.ok) { fail($('err-password'), explain(r.data)); return; }
+
+  $('step-password').classList.remove('active');
+  $('step-totp').classList.add('active');
+  $('code').focus();
+});
+
+$('use-recovery').addEventListener('click', (e) => {
+  e.preventDefault();
+  recoveryMode = !recoveryMode;
+  const code = $('code');
+  if (recoveryMode) {
+    $('code-label').textContent = 'Recovery code';
+    $('totp-sub').textContent = 'Enter one of the recovery codes saved during setup.';
+    code.classList.remove('code-input');
+    code.maxLength = 11;
+    code.removeAttribute('pattern');
+    e.target.textContent = 'Use the authenticator app instead';
+  } else {
+    $('code-label').textContent = 'Authenticator code';
+    $('totp-sub').textContent = 'Enter the 6-digit code from your authenticator app.';
+    code.classList.add('code-input');
+    code.maxLength = 6;
+    code.setAttribute('pattern', '[0-9]*');
+    e.target.textContent = 'Use a recovery code';
+  }
+  code.value = '';
+  code.focus();
+});
+
+$('form-totp').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('err-totp').hidden = true;
+  $('btn-totp').disabled = true;
+
+  const r = await post('/admin/login/totp', {
+    code: $('code').value,
+    recovery: recoveryMode,
+  });
+  $('btn-totp').disabled = false;
+
+  if (!r.ok) {
+    fail($('err-totp'), explain(r.data));
+    $('code').value = '';
+    $('code').focus();
+    return;
+  }
+  location.href = '/admin';
+});
+</script>
+</body>
+</html>
